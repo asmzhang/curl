@@ -7,6 +7,14 @@ name: 'android-prebuilt'
 'on':
   workflow_dispatch:
     inputs:
+      curl_repository:
+        description: 'curl repository to build from'
+        required: true
+        default: 'asmzhang/curl'
+      curl_ref:
+        description: 'curl branch or tag to build from'
+        required: true
+        default: 'android-8_20_0'
       android_platform:
         description: 'Android API level'
         required: true
@@ -48,6 +56,14 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
+          path: workflow-src
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: ${{ inputs.curl_repository }}
+          ref: ${{ inputs.curl_ref }}
+          persist-credentials: false
+          path: curl-src
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -105,7 +121,8 @@ jobs:
         env:
           CURL_OPENSSL_VERSION: '${{ inputs.openssl_version }}'
         run: |
-          ./.github/scripts/build-android-prebuilt.sh \
+          ./workflow-src/.github/scripts/build-android-prebuilt.sh \
+            "$PWD/curl-src" \
             "${{ matrix.abi }}" \
             "${{ inputs.android_platform }}" \
             "$PWD/openssl-build" \

@@ -2,19 +2,20 @@
 
 set -euo pipefail
 
-if [[ $# -ne 5 ]]; then
-  echo "usage: $0 <abi> <android-platform> <openssl-root> <curl-version> <output-root>" >&2
+if [[ $# -ne 6 ]]; then
+  echo "usage: $0 <source-root> <abi> <android-platform> <openssl-root> <curl-version> <output-root>" >&2
   exit 1
 fi
 
-ABI="$1"
-ANDROID_PLATFORM="$2"
-OPENSSL_ROOT="$3"
-CURL_VERSION="$4"
-OUTPUT_ROOT="$5"
+SOURCE_ROOT="$1"
+ABI="$2"
+ANDROID_PLATFORM="$3"
+OPENSSL_ROOT="$4"
+CURL_VERSION="$5"
+OUTPUT_ROOT="$6"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+REPO_ROOT="$(cd "${SOURCE_ROOT}" && pwd)"
 BUILD_DIR="${REPO_ROOT}/build-android-${ABI}"
 INSTALL_DIR="${BUILD_DIR}/install"
 CURL_PACKAGE_DIR="${OUTPUT_ROOT}/curl/${CURL_VERSION}/${ABI}"
