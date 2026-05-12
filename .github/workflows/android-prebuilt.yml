@@ -1,0 +1,128 @@
+# Copyright (C) OpenAI
+#
+# SPDX-License-Identifier: curl
+
+name: 'android-prebuilt'
+
+'on':
+  workflow_dispatch:
+    inputs:
+      android_platform:
+        description: 'Android API level'
+        required: true
+        default: '21'
+      openssl_version:
+        description: 'OpenSSL prebuilt version label'
+        required: true
+        default: '3.6.2'
+      openssl_archive_url:
+        description: 'Download URL for the OpenSSL prebuilt archive'
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  CURL_VERSION: '8.20.0'
+  DO_NOT_TRACK: '1'
+
+jobs:
+  build:
+    name: '${{ matrix.abi }}'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        abi:
+          - arm64-v8a
+          - armeabi-v7a
+          - x86
+          - x86_64
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: 'install tools'
+        run: sudo apt-get -o Dpkg::Use-Pty=0 update && sudo apt-get -o Dpkg::Use-Pty=0 install ninja-build unzip
+
+      - name: 'download OpenSSL prebuilts'
+        env:
+          OPENSSL_ARCHIVE_URL: '${{ inputs.openssl_archive_url }}'
+        run: |
+          mkdir -p third-party-cache
+          curl --fail --location --silent --show-error \
+            "${OPENSSL_ARCHIVE_URL}" \
+            --output third-party-cache/openssl-prebuilt.pkg
+
+      - name: 'extract OpenSSL prebuilts'
+        run: |
+          mkdir -p third-party-cache/openssl
+          archive_url='${{ inputs.openssl_archive_url }}'
+          archive_url="${archive_url%%\?*}"
+          case "${archive_url}" in
+            *.zip)
+              unzip -q third-party-cache/openssl-prebuilt.pkg -d third-party-cache/openssl
+              ;;
+            *.tar.gz|*.tgz)
+              tar -xzf third-party-cache/openssl-prebuilt.pkg -C third-party-cache/openssl
+              ;;
+            *.tar)
+              tar -xf third-party-cache/openssl-prebuilt.pkg -C third-party-cache/openssl
+              ;;
+            *)
+              echo "unsupported OpenSSL archive format: ${{ inputs.openssl_archive_url }}" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: 'build prebuilt curl'
+        env:
+          CURL_OPENSSL_VERSION: '${{ inputs.openssl_version }}'
+        run: |
+          ./.github/scripts/build-android-prebuilt.sh \
+            "${{ matrix.abi }}" \
+            "${{ inputs.android_platform }}" \
+            "$PWD/third-party-cache/openssl" \
+            "${CURL_VERSION}" \
+            "$PWD/out"
+
+      - name: 'upload per-abi artifact'
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: 'curl-android-${{ matrix.abi }}'
+          path: out/curl/${{ env.CURL_VERSION }}/${{ matrix.abi }}
+          if-no-files-found: error
+
+  bundle:
+    name: 'bundle'
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: 'download ABI artifacts'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: out
+
+      - name: 'normalize package tree'
+        run: |
+          mkdir -p release/curl/${{ env.CURL_VERSION }}
+          for abi in arm64-v8a armeabi-v7a x86 x86_64; do
+            mkdir -p "release/curl/${{ env.CURL_VERSION }}/${abi}"
+            cp -R "out/curl-android-${abi}/." "release/curl/${{ env.CURL_VERSION }}/${abi}/"
+          done
+
+      - name: 'archive'
+        run: |
+          cd release
+          tar -czf "curl-android-prebuilt-${{ env.CURL_VERSION }}-openssl-${{ inputs.openssl_version }}.tar.gz" curl
+
+      - name: 'upload bundle'
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: 'curl-android-prebuilt-${{ env.CURL_VERSION }}'
+          path: |
+            release/curl
+            release/curl-android-prebuilt-${{ env.CURL_VERSION }}-openssl-${{ inputs.openssl_version }}.tar.gz
+          if-no-files-found: error
