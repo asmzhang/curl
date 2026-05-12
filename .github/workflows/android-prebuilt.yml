@@ -115,8 +115,11 @@ jobs:
       - name: 'upload per-abi artifact'
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
-          name: 'curl-android-${{ matrix.abi }}'
-          path: out/curl/${{ env.CURL_VERSION }}/${{ matrix.abi }}
+          name: 'curl-openssl-android-${{ matrix.abi }}'
+          path: |
+            out/curl/${{ env.CURL_VERSION }}/${{ matrix.abi }}
+            out/openssl/${{ inputs.openssl_version }}/${{ matrix.abi }}
+            out/BUILD_INFO-${{ matrix.abi }}.txt
           if-no-files-found: error
 
   bundle:
@@ -132,21 +135,27 @@ jobs:
       - name: 'normalize package tree'
         run: |
           mkdir -p release/curl/${{ env.CURL_VERSION }}
+          mkdir -p release/openssl/${{ inputs.openssl_version }}
           for abi in arm64-v8a armeabi-v7a x86 x86_64; do
             mkdir -p "release/curl/${{ env.CURL_VERSION }}/${abi}"
-            cp -R "out/curl-android-${abi}/." "release/curl/${{ env.CURL_VERSION }}/${abi}/"
+            mkdir -p "release/openssl/${{ inputs.openssl_version }}/${abi}"
+            cp -R "out/curl-openssl-android-${abi}/curl/${{ env.CURL_VERSION }}/${abi}/." "release/curl/${{ env.CURL_VERSION }}/${abi}/"
+            cp -R "out/curl-openssl-android-${abi}/openssl/${{ inputs.openssl_version }}/${abi}/." "release/openssl/${{ inputs.openssl_version }}/${abi}/"
+            cp "out/curl-openssl-android-${abi}/BUILD_INFO-${abi}.txt" "release/"
           done
 
       - name: 'archive'
         run: |
           cd release
-          tar -czf "curl-android-prebuilt-${{ env.CURL_VERSION }}-openssl-${{ inputs.openssl_version }}-${{ inputs.openssl_ref }}.tar.gz" curl
+          tar -czf "curl-openssl-android-prebuilt-${{ env.CURL_VERSION }}-${{ inputs.openssl_version }}-${{ inputs.openssl_ref }}.tar.gz" curl openssl BUILD_INFO-*.txt
 
       - name: 'upload bundle'
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
-          name: 'curl-android-prebuilt-${{ env.CURL_VERSION }}'
+          name: 'curl-openssl-android-prebuilt-${{ env.CURL_VERSION }}'
           path: |
             release/curl
-            release/curl-android-prebuilt-${{ env.CURL_VERSION }}-openssl-${{ inputs.openssl_version }}-${{ inputs.openssl_ref }}.tar.gz
+            release/openssl
+            release/BUILD_INFO-*.txt
+            release/curl-openssl-android-prebuilt-${{ env.CURL_VERSION }}-${{ inputs.openssl_version }}-${{ inputs.openssl_ref }}.tar.gz
           if-no-files-found: error

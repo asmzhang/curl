@@ -17,7 +17,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 BUILD_DIR="${REPO_ROOT}/build-android-${ABI}"
 INSTALL_DIR="${BUILD_DIR}/install"
-PACKAGE_DIR="${OUTPUT_ROOT}/curl/${CURL_VERSION}/${ABI}"
+CURL_PACKAGE_DIR="${OUTPUT_ROOT}/curl/${CURL_VERSION}/${ABI}"
+OPENSSL_PACKAGE_DIR="${OUTPUT_ROOT}/openssl/${CURL_OPENSSL_VERSION}/${ABI}"
 
 resolve_openssl_abi_dir() {
   local root="$1"
@@ -46,7 +47,7 @@ OPENSSL_SSL_LIBRARY="${OPENSSL_ABI_DIR}/lib/libssl.a"
 OPENSSL_CRYPTO_LIBRARY="${OPENSSL_ABI_DIR}/lib/libcrypto.a"
 
 rm -rf "${BUILD_DIR}"
-mkdir -p "${PACKAGE_DIR}"
+mkdir -p "${CURL_PACKAGE_DIR}" "${OPENSSL_PACKAGE_DIR}"
 
 cmake -S "${REPO_ROOT}" -B "${BUILD_DIR}" -G Ninja \
   -DANDROID_ABI="${ABI}" \
@@ -81,9 +82,11 @@ cmake -S "${REPO_ROOT}" -B "${BUILD_DIR}" -G Ninja \
 cmake --build "${BUILD_DIR}" --target libcurl_static
 cmake --install "${BUILD_DIR}"
 
-mkdir -p "${PACKAGE_DIR}/include" "${PACKAGE_DIR}/lib"
-cp -R "${INSTALL_DIR}/include/." "${PACKAGE_DIR}/include/"
-cp "${INSTALL_DIR}/lib/libcurl.a" "${PACKAGE_DIR}/lib/"
+mkdir -p "${CURL_PACKAGE_DIR}/include" "${CURL_PACKAGE_DIR}/lib"
+cp -R "${INSTALL_DIR}/include/." "${CURL_PACKAGE_DIR}/include/"
+cp "${INSTALL_DIR}/lib/libcurl.a" "${CURL_PACKAGE_DIR}/lib/"
+
+cp -R "${OPENSSL_ABI_DIR}/." "${OPENSSL_PACKAGE_DIR}/"
 
 {
   echo "curl_version=${CURL_VERSION}"
@@ -91,4 +94,4 @@ cp "${INSTALL_DIR}/lib/libcurl.a" "${PACKAGE_DIR}/lib/"
   echo "android_abi=${ABI}"
   echo "android_platform=android-${ANDROID_PLATFORM}"
   echo "source_commit=${GITHUB_SHA:-unknown}"
-} > "${PACKAGE_DIR}/BUILD_INFO.txt"
+} > "${OUTPUT_ROOT}/BUILD_INFO-${ABI}.txt"
