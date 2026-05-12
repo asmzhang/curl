@@ -12,12 +12,17 @@ name: 'android-prebuilt'
         required: true
         default: '21'
       openssl_version:
-        description: 'OpenSSL prebuilt version label'
+        description: 'OpenSSL version label used in output metadata'
         required: true
         default: '3.6.2'
-      openssl_archive_url:
-        description: 'Download URL for the OpenSSL prebuilt archive'
+      openssl_repository:
+        description: 'OpenSSL repository to build from'
         required: true
+        default: 'asmzhang/openssl'
+      openssl_ref:
+        description: 'OpenSSL branch or tag to build from'
+        required: true
+        default: 'android'
 
 permissions:
   contents: read
@@ -44,38 +49,57 @@ jobs:
         with:
           persist-credentials: false
 
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: ${{ inputs.openssl_repository }}
+          ref: ${{ inputs.openssl_ref }}
+          persist-credentials: false
+          path: openssl-src
+
+      - name: 'set up Android NDK'
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26d
+
       - name: 'install tools'
-        run: sudo apt-get -o Dpkg::Use-Pty=0 update && sudo apt-get -o Dpkg::Use-Pty=0 install ninja-build unzip
+        run: sudo apt-get -o Dpkg::Use-Pty=0 update && sudo apt-get -o Dpkg::Use-Pty=0 install ninja-build
 
-      - name: 'download OpenSSL prebuilts'
+      - name: 'build OpenSSL for Android'
+        shell: bash
         env:
-          OPENSSL_ARCHIVE_URL: '${{ inputs.openssl_archive_url }}'
+          ABI: ${{ matrix.abi }}
+          API_LEVEL: ${{ inputs.android_platform }}
         run: |
-          mkdir -p third-party-cache
-          curl --fail --location --silent --show-error \
-            "${OPENSSL_ARCHIVE_URL}" \
-            --output third-party-cache/openssl-prebuilt.pkg
+          set -euxo pipefail
 
-      - name: 'extract OpenSSL prebuilts'
-        run: |
-          mkdir -p third-party-cache/openssl
-          archive_url='${{ inputs.openssl_archive_url }}'
-          archive_url="${archive_url%%\?*}"
-          case "${archive_url}" in
-            *.zip)
-              unzip -q third-party-cache/openssl-prebuilt.pkg -d third-party-cache/openssl
-              ;;
-            *.tar.gz|*.tgz)
-              tar -xzf third-party-cache/openssl-prebuilt.pkg -C third-party-cache/openssl
-              ;;
-            *.tar)
-              tar -xf third-party-cache/openssl-prebuilt.pkg -C third-party-cache/openssl
-              ;;
+          case "${ABI}" in
+            arm64-v8a) OPENSSL_TARGET='android-arm64' ;;
+            armeabi-v7a) OPENSSL_TARGET='android-arm' ;;
+            x86) OPENSSL_TARGET='android-x86' ;;
+            x86_64) OPENSSL_TARGET='android-x86_64' ;;
             *)
-              echo "unsupported OpenSSL archive format: ${{ inputs.openssl_archive_url }}" >&2
+              echo "unsupported ABI: ${ABI}" >&2
               exit 1
               ;;
           esac
+
+          export ANDROID_NDK_ROOT="${ANDROID_NDK_HOME}"
+          export PATH="${ANDROID_NDK_ROOT}/toolchains/llvm/prebuilt/linux-x86_64/bin:${PATH}"
+
+          rm -rf "${GITHUB_WORKSPACE}/openssl-build/${ABI}"
+          mkdir -p "${GITHUB_WORKSPACE}/openssl-build/${ABI}"
+
+          cd openssl-src
+          make clean || true
+          perl ./Configure \
+            "${OPENSSL_TARGET}" \
+            "-D__ANDROID_API__=${API_LEVEL}" \
+            "no-shared" \
+            "--prefix=${GITHUB_WORKSPACE}/openssl-build/${ABI}" \
+            "--openssldir=${GITHUB_WORKSPACE}/openssl-build/${ABI}/ssl"
+          make -j"$(nproc)"
+          make install_sw
+          cd "${GITHUB_WORKSPACE}"
 
       - name: 'build prebuilt curl'
         env:
@@ -84,7 +108,7 @@ jobs:
           ./.github/scripts/build-android-prebuilt.sh \
             "${{ matrix.abi }}" \
             "${{ inputs.android_platform }}" \
-            "$PWD/third-party-cache/openssl" \
+            "$PWD/openssl-build" \
             "${CURL_VERSION}" \
             "$PWD/out"
 
@@ -116,7 +140,7 @@ jobs:
       - name: 'archive'
         run: |
           cd release
-          tar -czf "curl-android-prebuilt-${{ env.CURL_VERSION }}-openssl-${{ inputs.openssl_version }}.tar.gz" curl
+          tar -czf "curl-android-prebuilt-${{ env.CURL_VERSION }}-openssl-${{ inputs.openssl_version }}-${{ inputs.openssl_ref }}.tar.gz" curl
 
       - name: 'upload bundle'
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
@@ -124,5 +148,5 @@ jobs:
           name: 'curl-android-prebuilt-${{ env.CURL_VERSION }}'
           path: |
             release/curl
-            release/curl-android-prebuilt-${{ env.CURL_VERSION }}-openssl-${{ inputs.openssl_version }}.tar.gz
+            release/curl-android-prebuilt-${{ env.CURL_VERSION }}-openssl-${{ inputs.openssl_version }}-${{ inputs.openssl_ref }}.tar.gz
           if-no-files-found: error
